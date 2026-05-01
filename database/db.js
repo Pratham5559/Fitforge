@@ -6,7 +6,9 @@ const Database = require('better-sqlite3');
 const path = require('path');
 const fs = require('fs');
 
-const DB_PATH = path.join(__dirname, 'fitness.db');
+// Use /tmp for SQLite on Vercel, otherwise use the configured path or local default
+const isVercel = process.env.VERCEL || process.env.NODE_ENV === 'production';
+const DB_PATH = process.env.DB_PATH || (isVercel ? '/tmp/fitness.db' : path.join(__dirname, 'fitness.db'));
 const SCHEMA_PATH = path.join(__dirname, 'schema.sql');
 
 let db;
@@ -26,8 +28,16 @@ function getDb() {
         if (userCount.count === 0) {
             db.prepare(`
                 INSERT INTO users (name, height_cm, weight_kg, age, gender, activity_level, goal)
-                VALUES ('Pratham', 175, 70, 21, 'male', 'moderate', 'bulk')
-            `).run();
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+            `).run(
+                process.env.DEFAULT_USER_NAME || 'User',
+                parseFloat(process.env.DEFAULT_USER_HEIGHT) || 175,
+                parseFloat(process.env.DEFAULT_USER_WEIGHT) || 70,
+                parseInt(process.env.DEFAULT_USER_AGE) || 25,
+                process.env.DEFAULT_USER_GENDER || 'male',
+                process.env.DEFAULT_USER_ACTIVITY || 'moderate',
+                process.env.DEFAULT_USER_GOAL || 'maintain'
+            );
         }
 
         console.log('✅ Database initialized successfully');
