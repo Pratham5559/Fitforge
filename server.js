@@ -10,6 +10,7 @@
  * - Diet plan generation
  */
 
+require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
 const path = require('path');
@@ -20,7 +21,9 @@ const app = express();
 const PORT = process.env.PORT || 3000;
 
 // Middleware
-app.use(cors());
+app.use(cors({
+    origin: process.env.CORS_ORIGIN || '*'
+}));
 app.use(express.json());
 app.use(express.static(path.join(__dirname, 'public')));
 
@@ -520,10 +523,15 @@ app.get('/{*splat}', (req, res) => {
     }
 });
 
-// Start server
-app.listen(PORT, () => {
-    console.log(`\n🏋️  FITNESS TRACKER running at http://localhost:${PORT}\n`);
-});
+// Start server only if not in production (Vercel handles the listener)
+if (process.env.NODE_ENV !== 'production') {
+    app.listen(PORT, () => {
+        console.log(`\n🏋️  FITNESS TRACKER running at http://localhost:${PORT}\n`);
+    });
+}
+
+// Export for Vercel
+module.exports = app;
 
 // Graceful shutdown
 process.on('SIGINT', () => {
