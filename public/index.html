@@ -1,0 +1,471 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <meta name="description" content="Personal Fitness Tracker — Track workouts, nutrition, and strength progress with smart analytics.">
+    <meta name="theme-color" content="#0a0a0f">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <title>FitForge — Personal Fitness Tracker</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <!-- ═══ SPLASH SCREEN ═══ -->
+    <div id="splash" class="splash">
+        <div class="splash-content">
+            <div class="splash-icon">🏋️</div>
+            <h1 class="splash-title">FitForge</h1>
+            <p class="splash-subtitle">Your Personal Gym Companion</p>
+            <div class="splash-loader">
+                <div class="loader-bar"></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ═══ MAIN APP ═══ -->
+    <div id="app" class="app hidden">
+        
+        <!-- ─── TOP BAR ─── -->
+        <header class="topbar">
+            <div class="topbar-left">
+                <span class="topbar-logo">🏋️</span>
+                <h1 class="topbar-title">FitForge</h1>
+            </div>
+            <div class="topbar-right">
+                <span id="streak-badge" class="streak-badge">🔥 0</span>
+                <button id="btn-profile" class="topbar-btn" aria-label="Profile">
+                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="8" r="4"/><path d="M20 21a8 8 0 1 0-16 0"/></svg>
+                </button>
+            </div>
+        </header>
+
+        <!-- ─── SCREEN CONTAINER ─── -->
+        <main id="screen-container" class="screen-container">
+            
+            <!-- ══════ DASHBOARD ══════ -->
+            <section id="screen-dashboard" class="screen active">
+                <div class="screen-scroll">
+                    <!-- Greeting -->
+                    <div class="greeting-card">
+                        <h2 id="greeting-text" class="greeting-text">Good Morning, Pratham 💪</h2>
+                        <p id="greeting-date" class="greeting-date"></p>
+                    </div>
+
+                    <!-- Quick Stats -->
+                    <div class="stats-grid">
+                        <div class="stat-card stat-workouts">
+                            <div class="stat-icon">🏋️</div>
+                            <div class="stat-value" id="stat-week-workouts">0</div>
+                            <div class="stat-label">This Week</div>
+                        </div>
+                        <div class="stat-card stat-volume">
+                            <div class="stat-icon">📊</div>
+                            <div class="stat-value" id="stat-week-volume">0</div>
+                            <div class="stat-label">Volume (kg)</div>
+                        </div>
+                        <div class="stat-card stat-streak">
+                            <div class="stat-icon">🔥</div>
+                            <div class="stat-value" id="stat-streak">0</div>
+                            <div class="stat-label">Day Streak</div>
+                        </div>
+                        <div class="stat-card stat-weight">
+                            <div class="stat-icon">⚖️</div>
+                            <div class="stat-value" id="stat-body-weight">0</div>
+                            <div class="stat-label">Weight (kg)</div>
+                        </div>
+                    </div>
+
+                    <!-- Protein Progress -->
+                    <div class="macro-card">
+                        <div class="macro-header">
+                            <h3>Daily Protein Target</h3>
+                            <span id="protein-numbers" class="macro-numbers">0 / 0g</span>
+                        </div>
+                        <div class="progress-bar">
+                            <div id="protein-bar" class="progress-fill protein-fill" style="width: 0%"></div>
+                        </div>
+                        <div class="macro-row">
+                            <div class="macro-item">
+                                <span class="macro-dot cal-dot"></span>
+                                <span>Calories</span>
+                                <strong id="cal-progress">0 / 0</strong>
+                            </div>
+                            <div class="macro-item">
+                                <span class="macro-dot carb-dot"></span>
+                                <span>Carbs</span>
+                                <strong id="carb-progress">0 / 0g</strong>
+                            </div>
+                            <div class="macro-item">
+                                <span class="macro-dot fat-dot"></span>
+                                <span>Fats</span>
+                                <strong id="fat-progress">0 / 0g</strong>
+                            </div>
+                        </div>
+                        <!-- Water tracker -->
+                        <div class="water-tracker">
+                            <div class="water-header">
+                                <span>💧 Water</span>
+                                <span id="water-progress">0 / 0 ml</span>
+                            </div>
+                            <div class="progress-bar">
+                                <div id="water-bar" class="progress-fill water-fill" style="width: 0%"></div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Quick Actions -->
+                    <div class="quick-actions">
+                        <button id="btn-start-workout" class="action-btn primary-action">
+                            <span class="action-icon">⚡</span>
+                            <span>Start Workout</span>
+                        </button>
+                        <button id="btn-log-meal" class="action-btn secondary-action">
+                            <span class="action-icon">🍽️</span>
+                            <span>Log Meal</span>
+                        </button>
+                        <button id="btn-log-weight" class="action-btn tertiary-action">
+                            <span class="action-icon">⚖️</span>
+                            <span>Log Weight</span>
+                        </button>
+                    </div>
+
+                    <!-- Personal Records -->
+                    <div class="pr-card">
+                        <h3 class="section-title">🏆 Personal Records</h3>
+                        <div id="pr-list" class="pr-list">
+                            <p class="empty-state">Start lifting to see your PRs here!</p>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- ══════ ACTIVE WORKOUT SCREEN ══════ -->
+            <section id="screen-workout" class="screen">
+                <div class="screen-scroll">
+                    <div class="workout-header">
+                        <button id="btn-end-workout" class="btn-icon danger">✕</button>
+                        <div class="workout-info">
+                            <input id="workout-name" class="workout-name-input" value="Workout" placeholder="Session name...">
+                            <div id="workout-timer" class="workout-timer">00:00</div>
+                        </div>
+                        <button id="btn-finish-workout" class="btn-icon success">✓</button>
+                    </div>
+
+                    <!-- Exercise Selector -->
+                    <div class="exercise-selector">
+                        <select id="exercise-select" class="select-input">
+                            <option value="">Select Exercise...</option>
+                        </select>
+                        <button id="btn-add-exercise" class="btn-add-exercise">+ Add</button>
+                    </div>
+
+                    <!-- Active Exercise Sets -->
+                    <div id="workout-exercises" class="workout-exercises">
+                        <div class="empty-workout-state">
+                            <p>Select an exercise above to start logging sets</p>
+                        </div>
+                    </div>
+
+                    <!-- Rest Timer Overlay -->
+                    <div id="rest-timer" class="rest-timer hidden">
+                        <div class="rest-timer-content">
+                            <h3>Rest Timer</h3>
+                            <div id="rest-countdown" class="rest-countdown">90</div>
+                            <div class="rest-buttons">
+                                <button class="rest-btn" data-time="60">60s</button>
+                                <button class="rest-btn active" data-time="90">90s</button>
+                                <button class="rest-btn" data-time="120">2m</button>
+                                <button class="rest-btn" data-time="180">3m</button>
+                            </div>
+                            <button id="btn-skip-rest" class="btn-skip-rest">Skip</button>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- ══════ NUTRITION SCREEN ══════ -->
+            <section id="screen-nutrition" class="screen">
+                <div class="screen-scroll">
+                    <h2 class="screen-title">🍽️ Nutrition Tracker</h2>
+                    
+                    <!-- Macro Rings -->
+                    <div class="macro-rings">
+                        <div class="ring-item">
+                            <canvas id="ring-calories" width="100" height="100"></canvas>
+                            <div class="ring-label">Calories</div>
+                            <div id="ring-cal-text" class="ring-value">0</div>
+                        </div>
+                        <div class="ring-item">
+                            <canvas id="ring-protein" width="100" height="100"></canvas>
+                            <div class="ring-label">Protein</div>
+                            <div id="ring-pro-text" class="ring-value">0g</div>
+                        </div>
+                        <div class="ring-item">
+                            <canvas id="ring-carbs" width="100" height="100"></canvas>
+                            <div class="ring-label">Carbs</div>
+                            <div id="ring-carb-text" class="ring-value">0g</div>
+                        </div>
+                        <div class="ring-item">
+                            <canvas id="ring-fats" width="100" height="100"></canvas>
+                            <div class="ring-label">Fats</div>
+                            <div id="ring-fat-text" class="ring-value">0g</div>
+                        </div>
+                    </div>
+
+                    <!-- Log Meal Form -->
+                    <div class="meal-form card">
+                        <h3>Log a Meal</h3>
+                        <input id="meal-name" class="input" placeholder="Meal name (e.g. Lunch)" type="text">
+                        <div class="form-grid">
+                            <div class="form-group">
+                                <label>Calories</label>
+                                <input id="meal-calories" class="input" type="number" placeholder="0">
+                            </div>
+                            <div class="form-group">
+                                <label>Protein (g)</label>
+                                <input id="meal-protein" class="input" type="number" placeholder="0">
+                            </div>
+                            <div class="form-group">
+                                <label>Carbs (g)</label>
+                                <input id="meal-carbs" class="input" type="number" placeholder="0">
+                            </div>
+                            <div class="form-group">
+                                <label>Fats (g)</label>
+                                <input id="meal-fats" class="input" type="number" placeholder="0">
+                            </div>
+                        </div>
+                        <div class="form-group">
+                            <label>Water (ml)</label>
+                            <input id="meal-water" class="input" type="number" placeholder="0">
+                        </div>
+                        <button id="btn-save-meal" class="btn-primary full-width">Save Meal</button>
+                    </div>
+
+                    <!-- Today's Meals -->
+                    <div class="meals-list card">
+                        <h3>Today's Meals</h3>
+                        <div id="meals-container" class="meals-container">
+                            <p class="empty-state">No meals logged today</p>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- ══════ CHARTS / ANALYTICS SCREEN ══════ -->
+            <section id="screen-charts" class="screen">
+                <div class="screen-scroll">
+                    <h2 class="screen-title">📊 Analytics</h2>
+
+                    <!-- Exercise selector for charts -->
+                    <div class="chart-controls">
+                        <select id="chart-exercise-select" class="select-input">
+                            <option value="">Select Exercise for Analysis</option>
+                        </select>
+                    </div>
+
+                    <!-- Plateau Alert -->
+                    <div id="plateau-alert" class="plateau-alert hidden">
+                        <span class="plateau-icon">⚠️</span>
+                        <span id="plateau-message"></span>
+                    </div>
+
+                    <!-- Weight vs 1RM Chart -->
+                    <div class="chart-card">
+                        <h3>Body Weight vs Estimated 1RM</h3>
+                        <div class="chart-wrapper">
+                            <canvas id="chart-weight-strength"></canvas>
+                        </div>
+                    </div>
+
+                    <!-- Volume Progress Chart -->
+                    <div class="chart-card">
+                        <h3>Volume Progress</h3>
+                        <div class="chart-wrapper">
+                            <canvas id="chart-volume"></canvas>
+                        </div>
+                    </div>
+
+                    <!-- Nutrition Chart -->
+                    <div class="chart-card">
+                        <h3>Nutrition History (30 Days)</h3>
+                        <div class="chart-wrapper">
+                            <canvas id="chart-nutrition"></canvas>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- ══════ DIET PLAN SCREEN ══════ -->
+            <section id="screen-diet" class="screen">
+                <div class="screen-scroll">
+                    <h2 class="screen-title">🥗 Diet Plan</h2>
+
+                    <!-- TDEE Summary -->
+                    <div class="tdee-card card">
+                        <div class="tdee-grid">
+                            <div class="tdee-item">
+                                <span class="tdee-value" id="diet-bmr">0</span>
+                                <span class="tdee-label">BMR</span>
+                            </div>
+                            <div class="tdee-item highlight">
+                                <span class="tdee-value" id="diet-tdee">0</span>
+                                <span class="tdee-label">TDEE</span>
+                            </div>
+                            <div class="tdee-item">
+                                <span class="tdee-value" id="diet-target">0</span>
+                                <span class="tdee-label">Target Cal</span>
+                            </div>
+                            <div class="tdee-item">
+                                <span class="tdee-value" id="diet-goal">—</span>
+                                <span class="tdee-label">Goal</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Meal Plan -->
+                    <div id="diet-meals" class="diet-meals">
+                        <!-- Populated by JS -->
+                    </div>
+                </div>
+            </section>
+
+            <!-- ══════ PROFILE SCREEN ══════ -->
+            <section id="screen-profile" class="screen">
+                <div class="screen-scroll">
+                    <h2 class="screen-title">👤 Profile</h2>
+                    <div class="profile-form card">
+                        <div class="form-group">
+                            <label>Name</label>
+                            <input id="profile-name" class="input" type="text" placeholder="Your name">
+                        </div>
+                        <div class="form-grid">
+                            <div class="form-group">
+                                <label>Height (cm)</label>
+                                <input id="profile-height" class="input" type="number" placeholder="175">
+                            </div>
+                            <div class="form-group">
+                                <label>Weight (kg)</label>
+                                <input id="profile-weight" class="input" type="number" placeholder="70">
+                            </div>
+                        </div>
+                        <div class="form-grid">
+                            <div class="form-group">
+                                <label>Age</label>
+                                <input id="profile-age" class="input" type="number" placeholder="21">
+                            </div>
+                            <div class="form-group">
+                                <label>Gender</label>
+                                <select id="profile-gender" class="select-input">
+                                    <option value="male">Male</option>
+                                    <option value="female">Female</option>
+                                </select>
+                            </div>
+                        </div>
+                        <div class="form-group">
+                            <label>Activity Level</label>
+                            <select id="profile-activity" class="select-input">
+                                <option value="sedentary">Sedentary (desk job)</option>
+                                <option value="light">Light (1-3 days/week)</option>
+                                <option value="moderate" selected>Moderate (3-5 days/week)</option>
+                                <option value="active">Active (6-7 days/week)</option>
+                                <option value="very_active">Very Active (2x/day)</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label>Goal</label>
+                            <select id="profile-goal" class="select-input">
+                                <option value="cut">Cut (Lose Fat)</option>
+                                <option value="maintain">Maintain</option>
+                                <option value="bulk" selected>Bulk (Build Muscle)</option>
+                                <option value="stamina">Stamina / Endurance</option>
+                            </select>
+                        </div>
+                        <button id="btn-save-profile" class="btn-primary full-width">Save Profile</button>
+                    </div>
+
+                    <!-- Computed Values -->
+                    <div class="computed-card card">
+                        <h3>Your Numbers</h3>
+                        <div class="computed-grid">
+                            <div class="computed-item">
+                                <span class="computed-label">BMR</span>
+                                <span id="computed-bmr" class="computed-value">—</span>
+                            </div>
+                            <div class="computed-item">
+                                <span class="computed-label">TDEE</span>
+                                <span id="computed-tdee" class="computed-value">—</span>
+                            </div>
+                            <div class="computed-item">
+                                <span class="computed-label">Target Cal</span>
+                                <span id="computed-cal" class="computed-value">—</span>
+                            </div>
+                            <div class="computed-item">
+                                <span class="computed-label">Protein</span>
+                                <span id="computed-protein" class="computed-value">—</span>
+                            </div>
+                            <div class="computed-item">
+                                <span class="computed-label">Carbs</span>
+                                <span id="computed-carbs" class="computed-value">—</span>
+                            </div>
+                            <div class="computed-item">
+                                <span class="computed-label">Fats</span>
+                                <span id="computed-fats" class="computed-value">—</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+        </main>
+
+        <!-- ─── BOTTOM NAV ─── -->
+        <nav class="bottom-nav">
+            <button class="nav-btn active" data-screen="dashboard">
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
+                <span>Home</span>
+            </button>
+            <button class="nav-btn" data-screen="nutrition">
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 8h1a4 4 0 0 1 0 8h-1"/><path d="M2 8h16v9a4 4 0 0 1-4 4H6a4 4 0 0 1-4-4V8z"/><line x1="6" y1="1" x2="6" y2="4"/><line x1="10" y1="1" x2="10" y2="4"/><line x1="14" y1="1" x2="14" y2="4"/></svg>
+                <span>Nutrition</span>
+            </button>
+            <button class="nav-btn nav-btn-center" data-screen="workout" id="nav-workout-btn">
+                <div class="nav-center-icon">
+                    <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+                </div>
+            </button>
+            <button class="nav-btn" data-screen="charts">
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>
+                <span>Charts</span>
+            </button>
+            <button class="nav-btn" data-screen="diet">
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+                <span>Diet</span>
+            </button>
+        </nav>
+
+        <!-- ─── TOAST NOTIFICATION ─── -->
+        <div id="toast" class="toast hidden">
+            <span id="toast-message"></span>
+        </div>
+
+        <!-- ─── MODAL: Log Weight ─── -->
+        <div id="modal-weight" class="modal hidden">
+            <div class="modal-backdrop"></div>
+            <div class="modal-content">
+                <h3>Log Today's Weight</h3>
+                <input id="modal-weight-input" class="input" type="number" step="0.1" placeholder="e.g. 70.5">
+                <div class="modal-actions">
+                    <button id="modal-weight-cancel" class="btn-secondary">Cancel</button>
+                    <button id="modal-weight-save" class="btn-primary">Save</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="app.js"></script>
+</body>
+</html>

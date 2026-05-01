@@ -1,0 +1,7 @@
+node_modules/
+database/fitness.db
+database/fitness.db-wal
+database/fitness.db-shm
+.DS_Store
+*.log
+.env
