@@ -1,20 +1,13 @@
 /**
- * FITNESS TRACKER - Express API Server
+ * FITNESS TRACKER - Express API Server (PostgreSQL / Supabase Version)
  * Phase 2: Core Backend Development
- * 
- * Endpoints:
- * - User profile & weight logging
- * - Workout session management
- * - Nutrition logging
- * - Analytics & intelligence
- * - Diet plan generation
  */
 
 require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
 const path = require('path');
-const { getDb, closeDb } = require('./database/db');
+const { getDb, query, closeDb } = require('./database/db');
 const engine = require('./engine/fitness');
 
 const app = express();
@@ -31,11 +24,10 @@ app.use(express.static(path.join(__dirname, 'public')));
 // USER PROFILE ENDPOINTS
 // ═══════════════════════════════════════════
 
-// GET user profile with computed macros
-app.get('/api/user', (req, res) => {
+app.get('/api/user', async (req, res) => {
     try {
-        const db = getDb();
-        const user = db.prepare('SELECT * FROM users WHERE id = 1').get();
+        const result = await query('SELECT * FROM users WHERE id = 1');
+        const user = result.rows[0];
         if (!user) return res.status(404).json({ error: 'User not found' });
 
         const bmr = engine.calculateBMR(user.weight_kg, user.height_cm, user.age, user.gender);
@@ -48,20 +40,18 @@ app.get('/api/user', (req, res) => {
     }
 });
 
-// PUT update user profile
-app.put('/api/user', (req, res) => {
+app.put('/api/user', async (req, res) => {
     try {
-        const db = getDb();
         const { name, height_cm, weight_kg, age, gender, activity_level, goal } = req.body;
-        db.prepare(`
-            UPDATE users SET name=?, height_cm=?, weight_kg=?, age=?, gender=?, activity_level=?, goal=?, updated_at=CURRENT_TIMESTAMP
+        await query(`
+            UPDATE users SET name=$1, height_cm=$2, weight_kg=$3, age=$4, gender=$5, activity_level=$6, goal=$7, updated_at=CURRENT_TIMESTAMP
             WHERE id = 1
-        `).run(name, height_cm, weight_kg, age, gender, activity_level, goal);
+        `, [name, height_cm, weight_kg, age, gender, activity_level, goal]);
 
-        // Also log weight
-        db.prepare('INSERT OR REPLACE INTO weight_log (user_id, weight_kg, logged_at) VALUES (1, ?, date("now"))').run(weight_kg);
+        await query('INSERT INTO weight_log (user_id, weight_kg, logged_at) VALUES (1, $1, CURRENT_DATE)', [weight_kg]);
 
-        const user = db.prepare('SELECT * FROM users WHERE id = 1').get();
+        const result = await query('SELECT * FROM users WHERE id = 1');
+        const user = result.rows[0];
         const bmr = engine.calculateBMR(user.weight_kg, user.height_cm, user.age, user.gender);
         const tdee = engine.calculateTDEE(user.weight_kg, user.height_cm, user.age, user.gender, user.activity_level);
         const macros = engine.calculateMacros(tdee, user.weight_kg, user.goal);
@@ -72,30 +62,26 @@ app.put('/api/user', (req, res) => {
     }
 });
 
-// POST daily weight
-app.post('/api/user/weight', (req, res) => {
+app.post('/api/user/weight', async (req, res) => {
     try {
-        const db = getDb();
         const { weight_kg } = req.body;
-        db.prepare('INSERT INTO weight_log (user_id, weight_kg, logged_at) VALUES (1, ?, date("now"))').run(weight_kg);
-        db.prepare('UPDATE users SET weight_kg = ?, updated_at = CURRENT_TIMESTAMP WHERE id = 1').run(weight_kg);
+        await query('INSERT INTO weight_log (user_id, weight_kg, logged_at) VALUES (1, $1, CURRENT_DATE)', [weight_kg]);
+        await query('UPDATE users SET weight_kg = $1, updated_at = CURRENT_TIMESTAMP WHERE id = 1', [weight_kg]);
         res.json({ success: true, weight_kg });
     } catch (err) {
         res.status(500).json({ error: err.message });
     }
 });
 
-// GET weight history
-app.get('/api/user/weight-history', (req, res) => {
+app.get('/api/user/weight-history', async (req, res) => {
     try {
-        const db = getDb();
         const days = parseInt(req.query.days) || 90;
-        const history = db.prepare(`
+        const result = await query(`
             SELECT * FROM weight_log WHERE user_id = 1 
-            AND logged_at >= date('now', '-${days} days')
+            AND logged_at >= CURRENT_DATE - INTERVAL '$1 days'
             ORDER BY logged_at ASC
-        `).all();
-        res.json(history);
+        `, [days]);
+        res.json(result.rows);
     } catch (err) {
         res.status(500).json({ error: err.message });
     }
@@ -105,28 +91,26 @@ app.get('/api/user/weight-history', (req, res) => {
 // EXERCISE ENDPOINTS
 // ═══════════════════════════════════════════
 
-app.get('/api/exercises', (req, res) => {
+app.get('/api/exercises', async (req, res) => {
     try {
-        const db = getDb();
         const category = req.query.category;
-        let exercises;
+        let result;
         if (category) {
-            exercises = db.prepare('SELECT * FROM exercises WHERE category = ? ORDER BY name').all(category);
+            result = await query('SELECT * FROM exercises WHERE category = $1 ORDER BY name', [category]);
         } else {
-            exercises = db.prepare('SELECT * FROM exercises ORDER BY category, name').all();
+            result = await query('SELECT * FROM exercises ORDER BY category, name');
         }
-        res.json(exercises);
+        res.json(result.rows);
     } catch (err) {
         res.status(500).json({ error: err.message });
     }
 });
 
-app.post('/api/exercises', (req, res) => {
+app.post('/api/exercises', async (req, res) => {
     try {
-        const db = getDb();
         const { name, category, is_cardio } = req.body;
-        const result = db.prepare('INSERT INTO exercises (name, category, is_cardio) VALUES (?, ?, ?)').run(name, category, is_cardio ? 1 : 0);
-        res.json({ id: result.lastInsertRowid, name, category, is_cardio });
+        const result = await query('INSERT INTO exercises (name, category, is_cardio) VALUES ($1, $2, $3) RETURNING id', [name, category, is_cardio]);
+        res.json({ id: result.rows[0].id, name, category, is_cardio });
     } catch (err) {
         res.status(500).json({ error: err.message });
     }
@@ -136,123 +120,109 @@ app.post('/api/exercises', (req, res) => {
 // WORKOUT SESSION ENDPOINTS
 // ═══════════════════════════════════════════
 
-// GET all sessions (paginated)
-app.get('/api/workouts', (req, res) => {
+app.get('/api/workouts', async (req, res) => {
     try {
-        const db = getDb();
         const limit = parseInt(req.query.limit) || 20;
         const offset = parseInt(req.query.offset) || 0;
-        const sessions = db.prepare(`
+        const result = await query(`
             SELECT ws.*, 
                    COUNT(DISTINCT wset.exercise_id) as exercise_count,
-                   SUM(wset.volume) as total_volume
+                   COALESCE(SUM(wset.weight_kg * wset.reps), 0) as total_volume
             FROM workout_sessions ws
-            LEFT JOIN workout_sets wset ON ws.id = wset.session_id AND wset.is_warmup = 0
+            LEFT JOIN workout_sets wset ON ws.id = wset.session_id AND wset.is_warmup = FALSE
             WHERE ws.user_id = 1
             GROUP BY ws.id
             ORDER BY ws.session_date DESC
-            LIMIT ? OFFSET ?
-        `).all(limit, offset);
-        res.json(sessions);
+            LIMIT $1 OFFSET $2
+        `, [limit, offset]);
+        res.json(result.rows);
     } catch (err) {
         res.status(500).json({ error: err.message });
     }
 });
 
-// GET single session with all sets
-app.get('/api/workouts/:id', (req, res) => {
+app.get('/api/workouts/:id', async (req, res) => {
     try {
-        const db = getDb();
-        const session = db.prepare('SELECT * FROM workout_sessions WHERE id = ?').get(req.params.id);
+        const sessionRes = await query('SELECT * FROM workout_sessions WHERE id = $1', [req.params.id]);
+        const session = sessionRes.rows[0];
         if (!session) return res.status(404).json({ error: 'Session not found' });
 
-        const sets = db.prepare(`
-            SELECT wset.*, e.name as exercise_name, e.category, e.is_cardio
+        const setsRes = await query(`
+            SELECT wset.*, e.name as exercise_name, e.category, e.is_cardio, (wset.weight_kg * wset.reps) as volume
             FROM workout_sets wset
             JOIN exercises e ON wset.exercise_id = e.id
-            WHERE wset.session_id = ?
+            WHERE wset.session_id = $1
             ORDER BY wset.created_at ASC
-        `).all(req.params.id);
+        `, [req.params.id]);
 
-        const cardio = db.prepare(`
+        const cardioRes = await query(`
             SELECT cl.*, e.name as exercise_name
             FROM cardio_log cl
             JOIN exercises e ON cl.exercise_id = e.id
-            WHERE cl.session_id = ?
-        `).all(req.params.id);
+            WHERE cl.session_id = $1
+        `, [req.params.id]);
 
-        res.json({ ...session, sets, cardio });
+        res.json({ ...session, sets: setsRes.rows, cardio: cardioRes.rows });
     } catch (err) {
         res.status(500).json({ error: err.message });
     }
 });
 
-// POST new workout session
-app.post('/api/workouts', (req, res) => {
+app.post('/api/workouts', async (req, res) => {
     try {
-        const db = getDb();
         const { session_name, session_date, notes } = req.body;
-        const result = db.prepare(`
+        const result = await query(`
             INSERT INTO workout_sessions (user_id, session_name, session_date, notes)
-            VALUES (1, ?, COALESCE(?, date('now')), ?)
-        `).run(session_name || 'Workout', session_date, notes);
-        
-        const session = db.prepare('SELECT * FROM workout_sessions WHERE id = ?').get(result.lastInsertRowid);
-        res.json(session);
+            VALUES (1, $1, COALESCE($2, CURRENT_DATE), $3)
+            RETURNING *
+        `, [session_name || 'Workout', session_date, notes]);
+        res.json(result.rows[0]);
     } catch (err) {
         res.status(500).json({ error: err.message });
     }
 });
 
-// DELETE a workout session
-app.delete('/api/workouts/:id', (req, res) => {
+app.delete('/api/workouts/:id', async (req, res) => {
     try {
-        const db = getDb();
-        db.prepare('DELETE FROM workout_sessions WHERE id = ?').run(req.params.id);
+        await query('DELETE FROM workout_sessions WHERE id = $1', [req.params.id]);
         res.json({ success: true });
     } catch (err) {
         res.status(500).json({ error: err.message });
     }
 });
 
-// POST add set to session
-app.post('/api/workouts/:id/sets', (req, res) => {
+app.post('/api/workouts/:id/sets', async (req, res) => {
     try {
-        const db = getDb();
         const { exercise_id, set_number, weight_kg, reps, rpe, is_warmup } = req.body;
-        const result = db.prepare(`
+        const insertRes = await query(`
             INSERT INTO workout_sets (session_id, exercise_id, set_number, weight_kg, reps, rpe, is_warmup)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
-        `).run(req.params.id, exercise_id, set_number || 1, weight_kg || 0, reps || 0, rpe, is_warmup ? 1 : 0);
+            VALUES ($1, $2, $3, $4, $5, $6, $7)
+            RETURNING *
+        `, [req.params.id, exercise_id, set_number || 1, weight_kg || 0, reps || 0, rpe, is_warmup || false]);
 
-        const set = db.prepare(`
-            SELECT wset.*, e.name as exercise_name
-            FROM workout_sets wset
-            JOIN exercises e ON wset.exercise_id = e.id
-            WHERE wset.id = ?
-        `).get(result.lastInsertRowid);
+        const set = insertRes.rows[0];
 
         // Get progressive overload info
-        const lastSession = db.prepare(`
-            SELECT SUM(wset.volume) as total_volume
+        const lastSessionRes = await query(`
+            SELECT SUM(wset.weight_kg * wset.reps) as total_volume
             FROM workout_sets wset
             JOIN workout_sessions ws ON wset.session_id = ws.id
-            WHERE wset.exercise_id = ? AND ws.user_id = 1 AND ws.id != ?
+            WHERE wset.exercise_id = $1 AND ws.user_id = 1 AND ws.id != $2
             AND ws.session_date = (
                 SELECT MAX(ws2.session_date) FROM workout_sessions ws2
                 JOIN workout_sets wset2 ON ws2.id = wset2.session_id
-                WHERE wset2.exercise_id = ? AND ws2.user_id = 1 AND ws2.id != ?
+                WHERE wset2.exercise_id = $3 AND ws2.user_id = 1 AND ws2.id != $4
             )
-        `).get(exercise_id, req.params.id, exercise_id, req.params.id);
+        `, [exercise_id, req.params.id, exercise_id, req.params.id]);
 
-        const currentVolume = db.prepare(`
-            SELECT SUM(volume) as total_volume FROM workout_sets 
-            WHERE session_id = ? AND exercise_id = ? AND is_warmup = 0
-        `).get(req.params.id, exercise_id);
+        const currentVolumeRes = await query(`
+            SELECT SUM(weight_kg * reps) as total_volume FROM workout_sets 
+            WHERE session_id = $1 AND exercise_id = $2 AND is_warmup = FALSE
+        `, [req.params.id, exercise_id]);
 
         const overload = engine.checkProgressiveOverload(
-            currentVolume?.total_volume || 0,
-            lastSession?.total_volume || 0
+            parseFloat(currentVolumeRes.rows[0]?.total_volume || 0),
+            parseFloat(lastSessionRes.rows[0]?.total_volume || 0)
         );
 
         res.json({ set, overload });
@@ -261,32 +231,10 @@ app.post('/api/workouts/:id/sets', (req, res) => {
     }
 });
 
-// DELETE a set
-app.delete('/api/sets/:id', (req, res) => {
+app.delete('/api/sets/:id', async (req, res) => {
     try {
-        const db = getDb();
-        db.prepare('DELETE FROM workout_sets WHERE id = ?').run(req.params.id);
+        await query('DELETE FROM workout_sets WHERE id = $1', [req.params.id]);
         res.json({ success: true });
-    } catch (err) {
-        res.status(500).json({ error: err.message });
-    }
-});
-
-// POST add cardio to session
-app.post('/api/workouts/:id/cardio', (req, res) => {
-    try {
-        const db = getDb();
-        const { exercise_id, duration_minutes, distance_km, avg_heart_rate } = req.body;
-        const splitData = engine.calculateSplitTime(distance_km, duration_minutes);
-
-        const result = db.prepare(`
-            INSERT INTO cardio_log (session_id, exercise_id, duration_minutes, distance_km, avg_heart_rate, split_time_per_km, calories_burned)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
-        `).run(req.params.id, exercise_id, duration_minutes, distance_km, avg_heart_rate,
-            splitData ? parseFloat(splitData.pace_per_km) : null,
-            splitData ? splitData.calories_estimate : Math.round(duration_minutes * 8));
-
-        res.json({ id: result.lastInsertRowid, splitData });
     } catch (err) {
         res.status(500).json({ error: err.message });
     }
@@ -296,95 +244,158 @@ app.post('/api/workouts/:id/cardio', (req, res) => {
 // NUTRITION ENDPOINTS
 // ═══════════════════════════════════════════
 
-// GET today's nutrition
-app.get('/api/nutrition/today', (req, res) => {
+app.get('/api/nutrition/today', async (req, res) => {
     try {
-        const db = getDb();
-        const meals = db.prepare(`
-            SELECT * FROM nutrition_log WHERE user_id = 1 AND log_date = date('now')
+        const mealsRes = await query(`
+            SELECT * FROM nutrition_log WHERE user_id = 1 AND log_date = CURRENT_DATE
             ORDER BY created_at ASC
-        `).all();
+        `);
 
-        const summary = db.prepare(`
-            SELECT * FROM daily_nutrition WHERE user_id = 1 AND log_date = date('now')
-        `).get() || { total_calories: 0, total_protein: 0, total_carbs: 0, total_fats: 0, total_water: 0 };
+        const summaryRes = await query(`
+            SELECT 
+                SUM(calories) as total_calories,
+                SUM(protein_g) as total_protein,
+                SUM(carbs_g) as total_carbs,
+                SUM(fats_g) as total_fats,
+                SUM(water_ml) as total_water
+            FROM nutrition_log WHERE user_id = 1 AND log_date = CURRENT_DATE
+        `);
 
-        // Get targets
-        const user = db.prepare('SELECT * FROM users WHERE id = 1').get();
+        const summary = summaryRes.rows[0] || { total_calories: 0, total_protein: 0, total_carbs: 0, total_fats: 0, total_water: 0 };
+
+        const userRes = await query('SELECT * FROM users WHERE id = 1');
+        const user = userRes.rows[0];
         const tdee = engine.calculateTDEE(user.weight_kg, user.height_cm, user.age, user.gender, user.activity_level);
         const targets = engine.calculateMacros(tdee, user.weight_kg, user.goal);
 
-        res.json({ meals, summary, targets });
+        res.json({ meals: mealsRes.rows, summary, targets });
     } catch (err) {
         res.status(500).json({ error: err.message });
     }
 });
 
-// POST log meal
-app.post('/api/nutrition', (req, res) => {
+app.post('/api/nutrition', async (req, res) => {
     try {
-        const db = getDb();
         const { meal_name, calories, protein_g, carbs_g, fats_g, water_ml, log_date } = req.body;
-        const result = db.prepare(`
+        await query(`
             INSERT INTO nutrition_log (user_id, log_date, meal_name, calories, protein_g, carbs_g, fats_g, water_ml)
-            VALUES (1, COALESCE(?, date('now')), ?, ?, ?, ?, ?, ?)
-        `).run(log_date, meal_name || 'Meal', calories || 0, protein_g || 0, carbs_g || 0, fats_g || 0, water_ml || 0);
-
-        res.json({ id: result.lastInsertRowid, success: true });
-    } catch (err) {
-        res.status(500).json({ error: err.message });
-    }
-});
-
-// DELETE a meal entry
-app.delete('/api/nutrition/:id', (req, res) => {
-    try {
-        const db = getDb();
-        db.prepare('DELETE FROM nutrition_log WHERE id = ?').run(req.params.id);
+            VALUES (1, COALESCE($1, CURRENT_DATE), $2, $3, $4, $5, $6, $7)
+        `, [log_date, meal_name || 'Meal', calories || 0, protein_g || 0, carbs_g || 0, fats_g || 0, water_ml || 0]);
         res.json({ success: true });
     } catch (err) {
         res.status(500).json({ error: err.message });
     }
 });
 
-// GET nutrition history
-app.get('/api/nutrition/history', (req, res) => {
+app.get('/api/nutrition/history', async (req, res) => {
     try {
-        const db = getDb();
         const days = parseInt(req.query.days) || 30;
-        const history = db.prepare(`
-            SELECT * FROM daily_nutrition WHERE user_id = 1
-            AND log_date >= date('now', '-${days} days')
+        const result = await query(`
+            SELECT 
+                log_date,
+                SUM(calories) as total_calories,
+                SUM(protein_g) as total_protein,
+                SUM(carbs_g) as total_carbs,
+                SUM(fats_g) as total_fats,
+                SUM(water_ml) as total_water
+            FROM nutrition_log WHERE user_id = 1
+            AND log_date >= CURRENT_DATE - INTERVAL '1 day' * $1
+            GROUP BY log_date
             ORDER BY log_date ASC
-        `).all();
-        res.json(history);
+        `, [days]);
+        res.json(result.rows);
     } catch (err) {
         res.status(500).json({ error: err.message });
     }
 });
 
 // ═══════════════════════════════════════════
-// ANALYTICS & INTELLIGENCE ENDPOINTS
+// ANALYTICS ENDPOINTS
 // ═══════════════════════════════════════════
 
-// GET exercise analytics with plateau detection
-app.get('/api/analytics/exercise/:exerciseId', (req, res) => {
+app.get('/api/analytics/dashboard', async (req, res) => {
     try {
-        const db = getDb();
-        const history = db.prepare(`
-            SELECT * FROM exercise_volume_history 
-            WHERE user_id = 1 AND exercise_id = ?
-            ORDER BY session_date ASC
-        `).all(req.params.exerciseId);
+        const weekWorkoutsRes = await query(`
+            SELECT COUNT(*) as count FROM workout_sessions 
+            WHERE user_id = 1 AND session_date >= CURRENT_DATE - INTERVAL '7 days'
+        `);
+
+        const weekVolumeRes = await query(`
+            SELECT COALESCE(SUM(wset.weight_kg * wset.reps), 0) as total
+            FROM workout_sets wset
+            JOIN workout_sessions ws ON wset.session_id = ws.id
+            WHERE ws.user_id = 1 AND ws.session_date >= CURRENT_DATE - INTERVAL '7 days'
+            AND wset.is_warmup = FALSE
+        `);
+
+        const todayNutritionRes = await query(`
+            SELECT 
+                SUM(calories) as total_calories,
+                SUM(protein_g) as total_protein,
+                SUM(carbs_g) as total_carbs,
+                SUM(fats_g) as total_fats,
+                SUM(water_ml) as total_water
+            FROM nutrition_log WHERE user_id = 1 AND log_date = CURRENT_DATE
+        `);
+
+        const userRes = await query('SELECT * FROM users WHERE id = 1');
+        const user = userRes.rows[0];
+        const tdee = engine.calculateTDEE(user.weight_kg, user.height_cm, user.age, user.gender, user.activity_level);
+        const macros = engine.calculateMacros(tdee, user.weight_kg, user.goal);
+
+        const prsRes = await query(`
+            SELECT e.name, MAX(wset.weight_kg) as max_weight
+            FROM workout_sets wset
+            JOIN exercises e ON wset.exercise_id = e.id
+            JOIN workout_sessions ws ON wset.session_id = ws.id
+            WHERE ws.user_id = 1 AND wset.is_warmup = FALSE
+            GROUP BY e.name
+            ORDER BY max_weight DESC
+            LIMIT 5
+        `);
+
+        res.json({
+            weekWorkouts: parseInt(weekWorkoutsRes.rows[0].count),
+            weekVolume: parseFloat(weekVolumeRes.rows[0].total),
+            streak: 1, // Simple placeholder for now
+            todayNutrition: todayNutritionRes.rows[0] || { total_calories: 0, total_protein: 0, total_carbs: 0, total_fats: 0, total_water: 0 },
+            targets: macros,
+            user,
+            prs: prsRes.rows
+        });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+app.get('/api/analytics/exercise/:exerciseId', async (req, res) => {
+    try {
+        const historyRes = await query(`
+            SELECT 
+                ws.session_date,
+                SUM(wset.weight_kg * wset.reps) as total_volume,
+                MAX(wset.weight_kg) as max_weight,
+                SUM(wset.reps) as total_reps,
+                COUNT(wset.id) as total_sets,
+                AVG(wset.rpe) as avg_rpe
+            FROM workout_sets wset
+            JOIN workout_sessions ws ON wset.session_id = ws.id
+            WHERE ws.user_id = 1 AND wset.exercise_id = $1 AND wset.is_warmup = FALSE
+            GROUP BY ws.session_date
+            ORDER BY ws.session_date ASC
+        `, [req.params.exerciseId]);
+
+        const history = historyRes.rows.map(h => ({
+            ...h,
+            total_volume: parseFloat(h.total_volume),
+            max_weight: parseFloat(h.max_weight),
+            avg_rpe: parseFloat(h.avg_rpe)
+        }));
 
         const plateau = engine.detectPlateau(history);
-
-        // Calculate 1RM history
         const oneRMHistory = history.map(h => ({
             date: h.session_date,
-            estimated_1rm: engine.estimate1RM(h.max_weight, Math.round(h.total_reps / h.total_sets)),
-            max_weight: h.max_weight,
-            total_volume: h.total_volume
+            estimated_1rm: engine.estimate1RM(h.max_weight, Math.round(h.total_reps / h.total_sets))
         }));
 
         res.json({ history, plateau, oneRMHistory });
@@ -393,123 +404,37 @@ app.get('/api/analytics/exercise/:exerciseId', (req, res) => {
     }
 });
 
-// GET overall dashboard stats
-app.get('/api/analytics/dashboard', (req, res) => {
+app.get('/api/analytics/weight-vs-strength', async (req, res) => {
     try {
-        const db = getDb();
-
-        // This week's workout count
-        const weekWorkouts = db.prepare(`
-            SELECT COUNT(*) as count FROM workout_sessions 
-            WHERE user_id = 1 AND session_date >= date('now', 'weekday 0', '-7 days')
-        `).get();
-
-        // Total volume this week
-        const weekVolume = db.prepare(`
-            SELECT COALESCE(SUM(wset.volume), 0) as total
+        const exerciseId = req.query.exercise_id || 1;
+        const weightRes = await query('SELECT logged_at as date, weight_kg FROM weight_log WHERE user_id = 1 ORDER BY logged_at ASC');
+        const strengthRes = await query(`
+            SELECT ws.session_date as date, MAX(wset.weight_kg) as max_weight, SUM(wset.reps) as total_reps, COUNT(wset.id) as total_sets
             FROM workout_sets wset
             JOIN workout_sessions ws ON wset.session_id = ws.id
-            WHERE ws.user_id = 1 AND ws.session_date >= date('now', 'weekday 0', '-7 days')
-            AND wset.is_warmup = 0
-        `).get();
+            WHERE ws.user_id = 1 AND wset.exercise_id = $1 AND wset.is_warmup = FALSE
+            GROUP BY ws.session_date
+            ORDER BY ws.session_date ASC
+        `, [exerciseId]);
 
-        // Today's nutrition
-        const todayNutrition = db.prepare(`
-            SELECT * FROM daily_nutrition WHERE user_id = 1 AND log_date = date('now')
-        `).get() || { total_calories: 0, total_protein: 0, total_carbs: 0, total_fats: 0, total_water: 0 };
-
-        // User + macros
-        const user = db.prepare('SELECT * FROM users WHERE id = 1').get();
-        const tdee = engine.calculateTDEE(user.weight_kg, user.height_cm, user.age, user.gender, user.activity_level);
-        const macros = engine.calculateMacros(tdee, user.weight_kg, user.goal);
-
-        // Streak calculation
-        const recentDates = db.prepare(`
-            SELECT DISTINCT session_date FROM workout_sessions 
-            WHERE user_id = 1 ORDER BY session_date DESC LIMIT 30
-        `).all();
-
-        let streak = 0;
-        const today = new Date();
-        for (let i = 0; i < recentDates.length; i++) {
-            const expected = new Date(today);
-            expected.setDate(expected.getDate() - i);
-            const expectedStr = expected.toISOString().split('T')[0];
-            if (recentDates[i]?.session_date === expectedStr) {
-                streak++;
-            } else {
-                break;
-            }
-        }
-
-        // Personal records
-        const prs = db.prepare(`
-            SELECT e.name, MAX(wset.weight_kg) as max_weight, 
-                   MAX(wset.volume) as max_volume
-            FROM workout_sets wset
-            JOIN exercises e ON wset.exercise_id = e.id
-            JOIN workout_sessions ws ON wset.session_id = ws.id
-            WHERE ws.user_id = 1 AND wset.is_warmup = 0
-            GROUP BY e.name
-            ORDER BY max_weight DESC
-            LIMIT 5
-        `).all();
-
-        res.json({
-            weekWorkouts: weekWorkouts.count,
-            weekVolume: weekVolume.total,
-            streak,
-            todayNutrition,
-            targets: macros,
-            user,
-            prs
-        });
-    } catch (err) {
-        res.status(500).json({ error: err.message });
-    }
-});
-
-// GET weight vs 1RM chart data
-app.get('/api/analytics/weight-vs-strength', (req, res) => {
-    try {
-        const db = getDb();
-        const exerciseId = req.query.exercise_id || 1; // default to Bench Press
-
-        const weightHistory = db.prepare(`
-            SELECT logged_at as date, weight_kg FROM weight_log 
-            WHERE user_id = 1 ORDER BY logged_at ASC
-        `).all();
-
-        const strengthHistory = db.prepare(`
-            SELECT session_date as date, max_weight, total_volume, total_reps, total_sets
-            FROM exercise_volume_history 
-            WHERE user_id = 1 AND exercise_id = ?
-            ORDER BY session_date ASC
-        `).all(exerciseId);
-
-        const oneRMHistory = strengthHistory.map(s => ({
+        const oneRMHistory = strengthRes.rows.map(s => ({
             date: s.date,
-            estimated_1rm: engine.estimate1RM(s.max_weight, Math.round(s.total_reps / s.total_sets))
+            estimated_1rm: engine.estimate1RM(parseFloat(s.max_weight), Math.round(s.total_reps / s.total_sets))
         }));
 
-        res.json({ weightHistory, strengthHistory, oneRMHistory });
+        res.json({ weightHistory: weightRes.rows, oneRMHistory });
     } catch (err) {
         res.status(500).json({ error: err.message });
     }
 });
 
-// ═══════════════════════════════════════════
-// DIET PLAN ENDPOINT
-// ═══════════════════════════════════════════
-
-app.get('/api/diet-plan', (req, res) => {
+app.get('/api/diet-plan', async (req, res) => {
     try {
-        const db = getDb();
-        const user = db.prepare('SELECT * FROM users WHERE id = 1').get();
+        const result = await query('SELECT * FROM users WHERE id = 1');
+        const user = result.rows[0];
         const tdee = engine.calculateTDEE(user.weight_kg, user.height_cm, user.age, user.gender, user.activity_level);
         const macros = engine.calculateMacros(tdee, user.weight_kg, user.goal);
         const plan = engine.generateDietPlan(macros, user.goal);
-
         res.json({ ...plan, user_goal: user.goal, tdee, bmr: engine.calculateBMR(user.weight_kg, user.height_cm, user.age, user.gender) });
     } catch (err) {
         res.status(500).json({ error: err.message });
@@ -523,18 +448,8 @@ app.get('/{*splat}', (req, res) => {
     }
 });
 
-// Start server only if not in production (Vercel handles the listener)
 if (process.env.NODE_ENV !== 'production') {
-    app.listen(PORT, () => {
-        console.log(`\n🏋️  FITNESS TRACKER running at http://localhost:${PORT}\n`);
-    });
+    app.listen(PORT, () => console.log(`🚀 FitForge running on http://localhost:${PORT}`));
 }
 
-// Export for Vercel
 module.exports = app;
-
-// Graceful shutdown
-process.on('SIGINT', () => {
-    closeDb();
-    process.exit(0);
-});

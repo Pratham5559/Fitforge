@@ -1,55 +1,70 @@
 /**
- * Database initialization and connection module
- * Uses better-sqlite3 for synchronous, fast SQLite operations
+ * Database initialization and connection module for PostgreSQL (Supabase)
  */
-const Database = require('better-sqlite3');
-const path = require('path');
+const { Pool } = require('pg');
 const fs = require('fs');
+const path = require('path');
 
-// Use /tmp for SQLite on Vercel, otherwise use the configured path or local default
-const isVercel = process.env.VERCEL || process.env.NODE_ENV === 'production';
-const DB_PATH = process.env.DB_PATH || (isVercel ? '/tmp/fitness.db' : path.join(__dirname, 'fitness.db'));
-const SCHEMA_PATH = path.join(__dirname, 'schema.sql');
-
-let db;
+let pool;
 
 function getDb() {
-    if (!db) {
-        db = new Database(DB_PATH);
-        db.pragma('journal_mode = WAL');
-        db.pragma('foreign_keys = ON');
-
-        // Run schema
-        const schema = fs.readFileSync(SCHEMA_PATH, 'utf8');
-        db.exec(schema);
-
-        // Seed default user if none exists
-        const userCount = db.prepare('SELECT COUNT(*) as count FROM users').get();
-        if (userCount.count === 0) {
-            db.prepare(`
-                INSERT INTO users (name, height_cm, weight_kg, age, gender, activity_level, goal)
-                VALUES (?, ?, ?, ?, ?, ?, ?)
-            `).run(
-                process.env.DEFAULT_USER_NAME || 'User',
-                parseFloat(process.env.DEFAULT_USER_HEIGHT) || 175,
-                parseFloat(process.env.DEFAULT_USER_WEIGHT) || 70,
-                parseInt(process.env.DEFAULT_USER_AGE) || 25,
-                process.env.DEFAULT_USER_GENDER || 'male',
-                process.env.DEFAULT_USER_ACTIVITY || 'moderate',
-                process.env.DEFAULT_USER_GOAL || 'maintain'
-            );
+    if (!pool) {
+        const connectionString = process.env.DATABASE_URL;
+        
+        if (!connectionString) {
+            console.error('❌ DATABASE_URL is missing! Please set it in your environment variables.');
+            process.exit(1);
         }
 
-        console.log('✅ Database initialized successfully');
+        pool = new Pool({
+            connectionString,
+            ssl: {
+                rejectUnauthorized: false // Required for Supabase connections
+            }
+        });
+
+        // Initialize schema on first connect
+        pool.query('SELECT COUNT(*) FROM users').catch(async (err) => {
+            console.log('📦 Initializing Supabase schema...');
+            const schema = fs.readFileSync(path.join(__dirname, 'schema.postgres.sql'), 'utf8');
+            try {
+                await pool.query(schema);
+                
+                // Seed default user
+                await pool.query(`
+                    INSERT INTO users (name, height_cm, weight_kg, age, gender, activity_level, goal)
+                    VALUES ($1, $2, $3, $4, $5, $6, $7)
+                `, [
+                    process.env.DEFAULT_USER_NAME || 'User',
+                    parseFloat(process.env.DEFAULT_USER_HEIGHT) || 175,
+                    parseFloat(process.env.DEFAULT_USER_WEIGHT) || 70,
+                    parseInt(process.env.DEFAULT_USER_AGE) || 25,
+                    process.env.DEFAULT_USER_GENDER || 'male',
+                    process.env.DEFAULT_USER_ACTIVITY || 'moderate',
+                    process.env.DEFAULT_USER_GOAL || 'maintain'
+                ]);
+                
+                console.log('✅ Supabase initialized successfully');
+            } catch (schemaErr) {
+                console.error('❌ Failed to initialize schema:', schemaErr);
+            }
+        });
     }
-    return db;
+    return pool;
+}
+
+// Wrapper to make pool.query work like the synchronous sqlite prepare().get()/.run()
+async function query(text, params) {
+    const db = getDb();
+    const res = await db.query(text, params);
+    return res;
 }
 
 function closeDb() {
-    if (db) {
-        db.close();
-        db = null;
+    if (pool) {
+        pool.end();
+        pool = null;
     }
 }
 
-module.exports = { getDb, closeDb };
+module.exports = { getDb, query, closeDb };
